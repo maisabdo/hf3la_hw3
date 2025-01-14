@@ -1,5 +1,7 @@
 #include "segel.h"
 #include "request.h"
+#define MIN_PNUM 1024
+#define MAX_PNUM 65535
 
 // 
 // server.c: A very, very simple web server
@@ -12,13 +14,42 @@
 //
 
 // HW3: Parse the new arguments too
-void getargs(int *port, int argc, char *argv[])
+void getargs(int *port, int argc, char *argv[], int *queue_size, char* schedalg, int* threads)
 {
-    if (argc < 2) {
-	fprintf(stderr, "Usage: %s <port>\n", argv[0]);
-	exit(1);
+    if (argc < 5) {
+	    fprintf(stderr, "Usage: %s <port>\n", argv[0]);
+	    exit(1);
     }
-    *port = atoi(argv[1]);
+    int portNumber= atoi(argv[1]);
+    int threadNumber = atoi(argv[2]);
+    int queueSizeNum = atoi(argv[3]);
+
+
+    if (portNumber< MIN_PNUM || portNumber > MAX_PNUM){
+        fprintf(stderr, "invalid port number %s", argv[1]);
+        exit(1);
+    }
+    *port = portNumber;
+
+    if(threadNumber<0){
+        fprintf(stderr, "invalid number of threads  %s", argv[2]);
+        exit(1);
+    }
+    *threads = threadNumber;
+
+    if(queueSizeNum<0){
+        fprintf(stderr, "invalid queue size  %s", argv[3]);
+        exit(1);
+    }
+    *queue_size = queueSizeNum;
+
+    if( (strcmp(argv[4],"random") != 0) &&  (strcmp(argv[4],"block") != 0) &&
+    (strcmp(argv[4],"dh") != 0) && (strcmp(argv[4],"dt") != 0)){
+        fprintf(stderr, "invalid schedalg  %s", argv[4]);
+        exit(1);
+    }
+    strcpy(schedalg, argv[4]);
+
 }
 
 int main(int argc, char *argv[])
