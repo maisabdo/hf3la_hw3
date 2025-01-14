@@ -88,5 +88,45 @@ void removeByIndex(Queue q,int index){
 }
 
 void removeByFd(Queue q,int fd){
+    if(q == NULL || q->first == NULL){
+        return;
+    }
+    Node current = q->first;
 
+    if(current->fd == fd){
+        q->first = current->next;
+        if(q->first == NULL){
+            q->last = NULL;
+        }
+        else{
+            q->first->prev = NULL;
+        }
+        close(current->fd);
+        free(current);
+        q->size--;
+        return;
+    }
+
+    while(current!=NULL && current->fd != fd){
+        current = current->next;
+    }
+
+    if(current == NULL){
+        return;
+    }
+
+    if(current->next != NULL){
+        current->next->prev = current->prev;
+    }
+    else{
+        q->last = current->prev;
+    }
+
+    if(current->prev != NULL){
+        current->prev->next = current->next;
+    }
+
+    close(current->fd);
+    free(current);
+    q->size--;
 }
