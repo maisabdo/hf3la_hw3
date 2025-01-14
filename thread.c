@@ -1,7 +1,7 @@
 //
 // Created by Mona Nahas on 14/01/2025.
 //
-#include "Thread.h"
+#include "thread.h"
 #include <stdlib.h>
 
 threads_stats createThread(int id)
