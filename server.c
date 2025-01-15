@@ -1,7 +1,15 @@
 #include "segel.h"
 #include "request.h"
+#include "queue.h"
 #define MIN_PNUM 1024
 #define MAX_PNUM 65535
+
+Queue waitingRequests;
+Queue workingRequests;
+Queue waitingRequests_vip;
+pthread_mutex_t lock;
+pthread_cond_t waitCond;
+pthread_cond_t blockCond;
 
 // 
 // server.c: A very, very simple web server
@@ -49,8 +57,59 @@ void getargs(int *port, int argc, char *argv[], int *queue_size, char* schedalg,
         exit(1);
     }
     strcpy(schedalg, argv[4]);
-
 }
+
+void* threadAux(void* t){
+        threads_stats thread = (threads_stats)t;
+        int isVIP = (thread->id == VIP_THREAD_ID);
+
+        while(1){
+            pthread_mutex_lock(&lock);
+
+            while((isVIP && waitingRequests_vip->size == 0) ||
+                   (!isVIP && (waitingRequests_vip->size > 0 ||
+                               waitingRequests->size == 0))) {
+                pthread_cond_wait(&waitCond, &lock);
+            }
+
+            Node request = NULL;
+
+            if(isVIP){
+                if (waitingRequests_vip->size > 0) {
+                    request = pop(waitingRequests_vip);
+                }
+            }
+            else{
+                if(waitingRequests->size > 0 && waitingRequests_vip->size == 0){
+                    request = pop(waitingRequests);
+                    if(request){
+                        addNode(workingRequests, request);
+                    }
+                }
+            }
+            pthread_mutex_unlock(&lock);
+
+            if(request){
+                gettimeofday(&(request->pickup_time), NULL);
+                timersub(&(request->pickup_time), &(request->arrival_time), &(request->dispatch_time));
+                requestHandle(request->fd, request->arrival_time, request->dispatch_time, thread);
+                pthread_mutex_lock(&lock);
+
+                if(!isVIP){
+                    removeByFd(workingRequests, request->fd);
+                }
+
+                pthread_mutex_unlock(&lock);
+
+                close(request->fd);
+                free(request);
+            }
+
+            pthread_cond_broadcast(&blockCond); ////////// lazm kman llwait?
+        }
+        return NULL;
+}
+
 
 int main(int argc, char *argv[])
 {
