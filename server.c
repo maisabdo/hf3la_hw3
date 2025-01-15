@@ -4,8 +4,8 @@
 #define MIN_PNUM 1024
 #define MAX_PNUM 65535
 
-Queue waitingRequests;
-Queue workingRequests;
+Queue waitingRequests_regular;
+Queue workingRequests_regular;
 Queue waitingRequests_vip;
 pthread_mutex_t lock;
 pthread_cond_t waitCond;
@@ -68,7 +68,7 @@ void* threadAux(void* t){
 
             while((isVIP && waitingRequests_vip->size == 0) ||
                    (!isVIP && (waitingRequests_vip->size > 0 ||
-                               waitingRequests->size == 0))) {
+                           waitingRequests_regular->size == 0))) {
                 pthread_cond_wait(&waitCond, &lock);
             }
 
@@ -80,10 +80,10 @@ void* threadAux(void* t){
                 }
             }
             else{
-                if(waitingRequests->size > 0 && waitingRequests_vip->size == 0){
-                    request = pop(waitingRequests);
+                if(waitingRequests_regular->size > 0 && waitingRequests_vip->size == 0){
+                    request = pop(waitingRequests_regular);
                     if(request){
-                        addNode(workingRequests, request);
+                        addNode(workingRequests_regular, request);
                     }
 
                 }
@@ -98,7 +98,7 @@ void* threadAux(void* t){
                 pthread_mutex_lock(&lock);
 
                 if(!isVIP){
-                    removeByFd(workingRequests, request->fd);
+                    removeByFd(workingRequests_regular, request->fd);
                 }
 
                 pthread_mutex_unlock(&lock);
@@ -116,38 +116,74 @@ void* threadAux(void* t){
 
 int main(int argc, char *argv[])
 {
-
-    int listenfd, connfd, port, clientlen;
+    int listenfd, connfd, port, clientlen, threads, queue_size;
     struct sockaddr_in clientaddr;
+    char schedalg[7];
+    struct timeval currtime;
 
-    getargs(&port, argc, argv);
+    getargs(&port, argc, argv , &queue_size, schedalg,&threads);
 
-    // 
-    // HW3: Create some threads...
-    //
+    if(pthread_cond_init(&waitCond, NULL) != 0){
+        return 0;
+    }
+
+    if(pthread_cond_init(&blockCond, NULL) != 0){
+        pthread_cond_destroy(&waitCond);
+        return 0;
+    }
+    if(pthread_mutex_init(&lock, NULL)){
+        pthread_cond_destroy(&waitCond);
+        pthread_cond_destroy(&blockCond);
+        return 0;
+    }
+
+    waitingRequests_regular = createQueue();
+    waitingRequests_vip=createQueue();
+    workingRequests_regular = createQueue();
+
+    if(!waitingRequests_regular || !waitingRequests_vip || !workingRequests_regular){
+        pthread_cond_destroy(&waitCond);
+        pthread_cond_destroy(&blockCond);
+        pthread_mutex_destroy(&lock);
+        return 0;
+    }
+
+    pthread_t* worker_threads = malloc(threads*(sizeof(pthread_t)));
+    if(!worker_threads)
+    {
+        pthread_cond_destroy(&waitCond);
+        pthread_cond_destroy(&blockCond);
+        pthread_mutex_destroy(&lock);
+        destroyQueue(waitingRequests_regular);
+        destroyQueue(workingRequests_regular);
+        destroyQueue(waitingRequests_vip);
+        return 0;
+    }
+
+    for(int i = 0; i < threads; i++)
+    {
+        threads_stats t = malloc(sizeof(threads_stats));
+        t->id = i;
+        t->stat_req = 0;
+        t->dynm_req = 0;
+        t->total_req =0;
+        pthread_create(&worker_threads[i], NULL, threadAux, (void*)t);
+    }
+    ///////////////////////////NOT SURE IT WORKS CORRECTLY
+    threads_stats vip_t = malloc(sizeof(threads_stats));
+    vip_t->id = threads+1; ///hl bnf3??
+    vip_t->stat_req = 0;
+    vip_t->dynm_req = 0;
+    vip_t->total_req =0;
+    pthread_create(&vip_t, NULL, threadAux, (void*)vip_t);
+   //////////////////////////////
 
     listenfd = Open_listenfd(port);
     while (1) {
 	clientlen = sizeof(clientaddr);
 	connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
-	// 
-	// HW3: In general, don't handle the request in the main thread.
-	// Save the relevant info in a buffer and have one of the worker threads 
-	// do the work. 
-	// 
-    // only for demostration purpuse:
-    threads_stats t = malloc(sizeof(threads_stats));
-    t->id = 0;
-	t->stat_req = 0;
-	t->dynm_req = 0;
-	t->total_req =0;
-    struct timeval arrival, dispatch;
-    dispatch.tv_sec = 0; dispatch.tv_usec = 0;
-    arrival.tv_sec = 0; arrival.tv_usec =0;
-    // only for demostration purpuse
-    requestHandle(connfd,arrival, dispatch, t);
-    free(t);
-	Close(connfd);
+
+
     }
 }
 
