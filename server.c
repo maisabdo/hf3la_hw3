@@ -85,7 +85,9 @@ void* threadAux(void* t){
                     if(request){
                         addNode(workingRequests, request);
                     }
+
                 }
+
             }
             pthread_mutex_unlock(&lock);
 
