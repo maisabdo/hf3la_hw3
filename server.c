@@ -107,7 +107,8 @@ void* threadAux(void* t){
                 free(request);
             }
 
-            pthread_cond_broadcast(&blockCond); ////////// lazm kman llwait?
+            pthread_cond_signal(&blockCond);
+            pthread_cond_signal(&waitCond);
         }
         return NULL;
 }
