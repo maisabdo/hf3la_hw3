@@ -84,7 +84,17 @@ Node pop(Queue q){
 }
 
 void removeByIndex(Queue q,int index){
-
+    if(q==NULL){
+        return;
+    }
+    if(index >= q->size || index < 0){
+        return;
+    }
+    Node current = q->first;
+    for (int i = 0; i < index; i++) {
+        current=current->next;
+    }
+    removeByFd(q,current->fd);
 }
 
 void removeByFd(Queue q,int fd){

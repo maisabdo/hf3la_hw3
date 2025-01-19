@@ -3,6 +3,7 @@
 #include "queue.h"
 #define MIN_PNUM 1024
 #define MAX_PNUM 65535
+#define VIP_THREAD_ID 0
 
 Queue waitingRequests_regular;
 Queue workingRequests_regular;
@@ -160,7 +161,7 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    for(int i = 0; i < threads; i++)
+    for(int i = 1; i < threads+1; i++)
     {
         threads_stats t = malloc(sizeof(threads_stats));
         t->id = i;
@@ -169,22 +170,94 @@ int main(int argc, char *argv[])
         t->total_req =0;
         pthread_create(&worker_threads[i], NULL, threadAux, (void*)t);
     }
-    ///////////////////////////NOT SURE IT WORKS CORRECTLY
+    ///////////////////////////NOT SURE IT WORKS CORRECTLY (first argument in pthread_create
     threads_stats vip_t = malloc(sizeof(threads_stats));
-    vip_t->id = threads+1; ///hl bnf3??
+    vip_t->id = VIP_THREAD_ID; ///hl bnf3??
     vip_t->stat_req = 0;
     vip_t->dynm_req = 0;
     vip_t->total_req =0;
-    pthread_create(&vip_t, NULL, threadAux, (void*)vip_t);
+    pthread_create(&worker_threads[0], NULL, threadAux, (void*)vip_t);
    //////////////////////////////
 
     listenfd = Open_listenfd(port);
-    while (1) {
-	clientlen = sizeof(clientaddr);
-	connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
+    while(1){
+        clientlen = sizeof(clientaddr);
+        connfd = Accept(listenfd, (SA *)&clientaddr, (socklen_t *) &clientlen);
 
+        if(gettimeofday(&currtime, NULL) != 0)
+        {
+            pthread_cond_destroy(&blockCond);
+            pthread_cond_destroy(&waitCond);
+            pthread_mutex_destroy(&lock);
+            destroyQueue(waitingRequests_vip);
+            destroyQueue(waitingRequests_regular);
+            destroyQueue(workingRequests_regular);
+            free(worker_threads);
+            return 0;
+        }
 
+        pthread_mutex_lock(&lock);
+
+        ///added this based on piazza 17/1
+        while(waitingRequests_regular->size == 0){
+            pthread_cond_wait(&blockCond, &lock);
+        }
+
+        ///if the bufferSize+1 request is vip what sould happen in drop tail?
+
+        if(waitingRequests_regular->size + workingRequests_regular->size + waitingRequests_vip->size >= queue_size){
+            if(strcmp(schedalg, "block") == 0){
+                while(waitingRequests_regular->size + workingRequests_regular->size + waitingRequests_vip->size >= queue_size)
+                {
+                    pthread_cond_wait(&blockCond, &lock);
+                }
+            }
+            else if(strcmp(schedalg, "dt") == 0){
+                Close(connfd);
+                pthread_mutex_unlock(&lock);
+                continue;
+            }
+            else if(strcmp(schedalg, "dh") == 0){
+                Node request = pop(waitingRequests_regular);
+                if(!request)
+                {
+                    close(connfd);
+                    pthread_mutex_unlock(&lock);
+                    continue;
+                }
+                close(request->fd);
+                free(request);
+            }
+            else if(strcmp(schedalg, "random") == 0)
+            {
+                if(waitingRequests_regular->size == 0)
+                {
+                    close(connfd);
+                    pthread_mutex_unlock(&lock);
+                    continue;
+                }
+                int amount = (int)ceil(waitingRequests_regular->size * 0.5);
+                for(int i = 0; i < amount; i++)
+                {
+                    int index = rand()%(waitingRequests_regular->size);
+                    removeByIndex(waitingRequests_regular, index);
+                }
+            }
+        }
+
+        int isRequestVIP = getRequestMetaData(connfd);
+        Node newRequest = createNode(connfd, currtime);
+        if(isRequestVIP){
+            addNode(waitingRequests_vip, newRequest);
+        }
+        else{
+            addNode(waitingRequests_regular, newRequest);
+        }
+        pthread_cond_signal(&waitCond);
+        pthread_mutex_unlock(&lock);
     }
+    pthread_cond_destroy(&waitCond);
+    pthread_cond_destroy(&blockCond);
 }
 
 
