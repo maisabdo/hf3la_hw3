@@ -213,7 +213,13 @@ int main(int argc, char *argv[])
                 }
             }
             else if(strcmp(schedalg, "dt") == 0){
-                Close(connfd);
+                if(getRequestMetaData(connfd)){
+                    Node request = pop(waitingRequests_regular);
+                    close(request->fd);
+                }
+                else{
+                    Close(connfd);
+                }
                 pthread_mutex_unlock(&lock);
                 continue;
             }
