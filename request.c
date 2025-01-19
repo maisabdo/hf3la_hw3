@@ -113,6 +113,8 @@ void requestGetFiletype(char *filename, char *filetype)
 		strcpy(filetype, "image/gif");
 	else if (strstr(filename, ".jpg"))
 		strcpy(filetype, "image/jpeg");
+    else if (strstr(filename, ".skip"))
+        strcpy(filetype, "skip");
 	else
 		strcpy(filetype, "text/plain");
 }
