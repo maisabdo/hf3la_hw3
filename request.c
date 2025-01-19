@@ -4,6 +4,7 @@
 
 #include "segel.h"
 #include "request.h"
+#include "server.c" ///19/1
 
 // requestError(      fd,    filename,        "404",    "Not found", "OS-HW3 Server could not find this file");
 void requestError(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg, struct timeval arrival, struct timeval dispatch, threads_stats t_stats)
@@ -213,6 +214,7 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
 	struct stat sbuf;
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
 	char filename[MAXLINE], cgiargs[MAXLINE];
+    char filetype[MAXLINE]; //19/1
 	rio_t rio;
 
 	Rio_readinitb(&rio, fd);
@@ -225,6 +227,17 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
 	}
 
 	requestReadhdrs(&rio);
+
+    ///19/1
+    requestGetFiletype(uri, filetype);
+    int skipRequest = (strcmp(filetype, "skip") == 0);
+
+    if (skipRequest) {
+        char *skipSuffix = strstr(uri, ".skip");
+        if(skipSuffix){
+            *skipSuffix = '\0';
+        }
+    }
 
 	is_static = requestParseURI(uri, filename, cgiargs);
 	if (stat(filename, &sbuf) < 0) {
@@ -247,4 +260,24 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
 		(t_stats->dynm_req)++;
 		requestServeDynamic(fd, filename, cgiargs, arrival, dispatch, t_stats);
 	}
+
+    ///19/1
+    if(skipRequest){
+        pthread_mutex_lock(&lock);
+
+        if(waitingRequests_regular->size > 0){
+            Node skipNode = pop(waitingRequests_regular);
+            pthread_mutex_unlock(&lock);
+
+            gettimeofday(&(skipNode->pickup_time), NULL);
+            timersub(&(skipNode->pickup_time), &(skipNode->arrival_time), &(skipNode->dispatch_time));
+            requestHandle(skipNode->fd, skipNode->arrival_time, skipNode->dispatch_time, t_stats);
+
+            close(skipNode->fd);
+            free(skipNode);
+        }
+        else{
+            pthread_mutex_unlock(&lock);
+        }
+    }
 }
