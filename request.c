@@ -4,6 +4,17 @@
 
 #include "segel.h"
 #include "request.h"
+#include "stdbool.h"  ///// mona
+
+//// mona
+bool isSkip(char *filename, char *filetype){
+    if (strstr(filename, ".skip")){
+        strcpy(filetype, "skip");
+        return true;
+    }
+    return false;
+}
+/////
 
 // requestError(      fd,    filename,        "404",    "Not found", "OS-HW3 Server could not find this file");
 void requestError(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg, struct timeval arrival, struct timeval dispatch, threads_stats t_stats)
@@ -113,8 +124,6 @@ void requestGetFiletype(char *filename, char *filetype)
 		strcpy(filetype, "image/gif");
 	else if (strstr(filename, ".jpg"))
 		strcpy(filetype, "image/jpeg");
-    else if (strstr(filename, ".skip"))
-        strcpy(filetype, "skip");
 	else
 		strcpy(filetype, "text/plain");
 }
@@ -215,6 +224,7 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
 	char filename[MAXLINE], cgiargs[MAXLINE];
     char filetype[MAXLINE]; //19/1
 	rio_t rio;
+    t_stats->total_req++;
 
 	Rio_readinitb(&rio, fd);
 	Rio_readlineb(&rio, buf, MAXLINE);
@@ -228,8 +238,7 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
 	requestReadhdrs(&rio);
 
     ///19/1
-    requestGetFiletype(uri, filetype);
-    int skipRequest = (strcmp(filetype, "skip") == 0);
+    int skipRequest = isSkip(uri,filetype); ////// mona
 
     if (skipRequest) {
         char *skipSuffix = strstr(uri, ".skip");
@@ -281,3 +290,4 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
         }
     }*/
 }
+
