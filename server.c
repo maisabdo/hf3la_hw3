@@ -62,7 +62,7 @@ void getargs(int *port, int argc, char *argv[], int *queue_size, char* schedalg,
 
 void* threadAux(void* t){
         threads_stats thread = (threads_stats)t;
-        int isVIP = (thread->id == VIP_THREAD_ID);
+        bool isVIP = thread->is_vip;
 
         while(1){
             pthread_mutex_lock(&lock);
@@ -163,22 +163,24 @@ int main(int argc, char *argv[])
         return 0;
     }
 
-    for(int i = 1; i < threads+1; i++)
+    for(int i = 0; i < threads; i++)
     {
         threads_stats t = malloc(sizeof(threads_stats));
         t->id = i;
         t->stat_req = 0;
         t->dynm_req = 0;
         t->total_req =0;
+        t->is_vip=false;
         pthread_create(&worker_threads[i], NULL, threadAux, (void*)t);
     }
     ///////////////////////////NOT SURE IT WORKS CORRECTLY (first argument in pthread_create
     threads_stats vip_t = malloc(sizeof(threads_stats));
-    vip_t->id = VIP_THREAD_ID; ///hl bnf3??
+    vip_t->id = threads; ///hl bnf3??
     vip_t->stat_req = 0;
     vip_t->dynm_req = 0;
     vip_t->total_req =0;
-    pthread_create(&worker_threads[0], NULL, threadAux, (void*)vip_t);
+    vip_t->is_vip=true;
+    pthread_create(&worker_threads[threads], NULL, threadAux, (void*)vip_t);
    //////////////////////////////
 
     listenfd = Open_listenfd(port);
