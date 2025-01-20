@@ -199,9 +199,10 @@ int main(int argc, char *argv[])
         pthread_mutex_lock(&lock);
 
         ///added this based on piazza 17/1
+        /*
         while(waitingRequests_regular->size == 0){
             pthread_cond_wait(&blockCond, &lock);
-        }
+        }*/
 
         ///if the bufferSize+1 request is vip what sould happen in drop tail?
 
