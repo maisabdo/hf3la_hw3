@@ -242,7 +242,10 @@ int main(int argc, char *argv[])
                     pthread_mutex_unlock(&lock);
                     continue;
                 }
-                int amount = (int)ceil(waitingRequests_regular->size * 0.5);
+
+                //int amount = (int)ceil(waitingRequests_regular->size * 0.5);
+                int amount = (waitingRequests_regular->size + 1)/2;
+
                 for(int i = 0; i < amount; i++)
                 {
                     int index = rand()%(waitingRequests_regular->size);

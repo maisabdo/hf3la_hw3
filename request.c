@@ -4,7 +4,6 @@
 
 #include "segel.h"
 #include "request.h"
-#include "server.c" ///19/1
 
 // requestError(      fd,    filename,        "404",    "Not found", "OS-HW3 Server could not find this file");
 void requestError(int fd, char *cause, char *errnum, char *shortmsg, char *longmsg, struct timeval arrival, struct timeval dispatch, threads_stats t_stats)
@@ -262,6 +261,7 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
 	}
 
     ///19/1
+    /*
     if(skipRequest){
         pthread_mutex_lock(&lock);
 
@@ -279,5 +279,5 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
         else{
             pthread_mutex_unlock(&lock);
         }
-    }
+    }*/
 }
