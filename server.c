@@ -207,7 +207,7 @@ int main(int argc, char *argv[])
         ///if the bufferSize+1 request is vip what sould happen in drop tail?
 
         if(waitingRequests_regular->size + workingRequests_regular->size + waitingRequests_vip->size >= queue_size){
-            if(strcmp(schedalg, "block") == 0){
+            if(strcmp(schedalg, "block") == 0 || waitingRequests_regular->size == 0){
                 while(waitingRequests_regular->size + workingRequests_regular->size + waitingRequests_vip->size >= queue_size)
                 {
                     pthread_cond_wait(&blockCond, &lock);
