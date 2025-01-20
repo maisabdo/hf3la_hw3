@@ -104,7 +104,6 @@ void* threadAux(void* t){
                 else{
                     close(request->fd);
                     free(request);
-
                 }
                 pthread_cond_signal(&blockCond);
                 pthread_cond_signal(&waitCond);
