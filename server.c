@@ -3,14 +3,18 @@
 #include "queue.h"
 #define MIN_PNUM 1024
 #define MAX_PNUM 65535
-#define VIP_THREAD_ID 0
+
 
 Queue waitingRequests_regular;
 Queue workingRequests_regular;
 Queue waitingRequests_vip;
 pthread_mutex_t lock;
-pthread_cond_t waitCond;
-pthread_cond_t blockCond;
+pthread_cond_t waitCond; //empty
+pthread_cond_t blockCond; //full
+pthread_cond_t waitCond_vip; //vip empty
+pthread_cond_t blockCond_vip; //vip working
+
+bool vip_working_curr;
 
 // 
 // server.c: A very, very simple web server
@@ -60,62 +64,97 @@ void getargs(int *port, int argc, char *argv[], int *queue_size, char* schedalg,
     strcpy(schedalg, argv[4]);
 }
 
-void* threadAux(void* t){
-        threads_stats thread = (threads_stats)t;
-        bool isVIP = thread->is_vip;
+void* threadAux(void* t) {
+    threads_stats thread = (threads_stats)t;
 
+    // worker thread
+    if(!thread->is_vip){
         while(1){
             pthread_mutex_lock(&lock);
 
-            while((isVIP && waitingRequests_vip->size == 0) ||
-                   (!isVIP && (waitingRequests_vip->size > 0 ||
-                           waitingRequests_regular->size == 0))) {
+            while((vip_working_curr) || (waitingRequests_vip->size>0)){   ////21/1
+                pthread_cond_wait(&blockCond_vip,&lock);
+            }
+
+            while (waitingRequests_regular->size == 0) {
                 pthread_cond_wait(&waitCond, &lock);
             }
 
-            Node request = NULL;
+            Node request = pop(waitingRequests_regular);
+            pthread_cond_signal(&blockCond);
 
-            if(isVIP){
-                if (waitingRequests_vip->size > 0) {
-                    request = pop(waitingRequests_vip);
-                }
-            }
-            else{
-                if(waitingRequests_regular->size > 0 && waitingRequests_vip->size == 0){
-                    request = pop(waitingRequests_regular);
-                    if(request){
-                        addNode(workingRequests_regular, request);
-                    }
-
-                }
-
-            }
-            pthread_mutex_unlock(&lock);
-
-            if(request){
-                gettimeofday(&(request->pickup_time), NULL);
-                timersub(&(request->pickup_time), &(request->arrival_time), &(request->dispatch_time));
-                requestHandle(request->fd, request->arrival_time, request->dispatch_time, thread);
-                pthread_mutex_lock(&lock);
-
-                if(!isVIP){
-                    removeByFd(workingRequests_regular, request->fd);
-                }
-                else{
-                    close(request->fd);
-                    free(request);
-                }
-                pthread_cond_signal(&blockCond);
-                pthread_cond_signal(&waitCond);
-
+            if(!request){
                 pthread_mutex_unlock(&lock);
-
+                return NULL;
             }
 
-        }
-        return NULL;
-}
+            if(gettimeofday(&(request->pickup_time), NULL) != 0){
+                close(request->fd);
+                pthread_mutex_unlock(&lock);
+                return NULL;
+            }
 
+            timersub(&(request->pickup_time), &(request->arrival_time), &(request->dispatch_time));
+            addNode(workingRequests_regular, request);
+            int fd = request->fd;
+            struct timeval arrival = request->arrival_time;
+            struct timeval dispatch = request->dispatch_time;
+
+            pthread_mutex_unlock(&lock);
+            requestHandle(fd, arrival, dispatch, thread);
+
+            pthread_mutex_lock(&lock);
+            removeByFd(workingRequests_regular, fd);
+            pthread_cond_signal(&blockCond);
+            //pthread_cond_signal(&waitCond);   /////21/1
+            pthread_mutex_unlock(&lock);
+        }
+    }
+    else{ //vip thread
+        while(1){
+            pthread_mutex_lock(&lock);
+            while(waitingRequests_vip->size==0){
+                vip_working_curr=false;     //////21/1 maybe wrong
+                pthread_cond_signal(&blockCond_vip);
+                pthread_cond_wait(&waitCond_vip,&lock);
+            }
+            ///she waited again
+            vip_working_curr=true;
+
+            Node request=pop(waitingRequests_vip);
+            if(!request){
+                pthread_mutex_unlock(&lock);
+                return NULL;
+            }
+
+            if(gettimeofday(&(request->pickup_time), NULL) != 0){
+                close(request->fd);
+                pthread_mutex_unlock(&lock);
+                return NULL;
+            }
+
+            timersub(&(request->pickup_time), &(request->arrival_time), &(request->dispatch_time));
+            int fd = request->fd;
+            struct timeval arrival = request->arrival_time;
+            struct timeval dispatch = request->dispatch_time;
+
+            pthread_mutex_unlock(&lock);
+            requestHandle(fd, arrival, dispatch, thread);
+
+
+            close(fd);
+            free(request);
+            pthread_cond_signal(&blockCond_vip);   ////21/1 mutix? lazm?
+
+            //pthread_mutex_lock(&lock);
+            //removeByFd(workingRequests_regular, fd);
+            //pthread_cond_signal(&blockCond);
+            //pthread_cond_signal(&waitCond);   /////21/1
+            //pthread_mutex_unlock(&lock);
+        }
+    }
+    return NULL;
+}
 
 int main(int argc, char *argv[])
 {
@@ -134,9 +173,23 @@ int main(int argc, char *argv[])
         pthread_cond_destroy(&waitCond);
         return 0;
     }
+    if(pthread_cond_init(&waitCond_vip, NULL) != 0){
+        pthread_cond_destroy(&waitCond);
+        pthread_cond_destroy(&blockCond);
+        return 0;
+    }
+
+    if(pthread_cond_init(&blockCond_vip, NULL) != 0){
+        pthread_cond_destroy(&waitCond);
+        pthread_cond_destroy(&blockCond);
+        pthread_cond_destroy(&waitCond_vip);
+        return 0;
+    }
     if(pthread_mutex_init(&lock, NULL)){
         pthread_cond_destroy(&waitCond);
         pthread_cond_destroy(&blockCond);
+        pthread_cond_destroy(&waitCond_vip);
+        pthread_cond_destroy(&blockCond_vip);
         return 0;
     }
 
@@ -147,6 +200,8 @@ int main(int argc, char *argv[])
     if(!waitingRequests_regular || !waitingRequests_vip || !workingRequests_regular){
         pthread_cond_destroy(&waitCond);
         pthread_cond_destroy(&blockCond);
+        pthread_cond_destroy(&waitCond_vip);
+        pthread_cond_destroy(&blockCond_vip);
         pthread_mutex_destroy(&lock);
         return 0;
     }
@@ -156,6 +211,8 @@ int main(int argc, char *argv[])
     {
         pthread_cond_destroy(&waitCond);
         pthread_cond_destroy(&blockCond);
+        pthread_cond_destroy(&waitCond_vip);
+        pthread_cond_destroy(&blockCond_vip);
         pthread_mutex_destroy(&lock);
         destroyQueue(waitingRequests_regular);
         destroyQueue(workingRequests_regular);
@@ -183,6 +240,7 @@ int main(int argc, char *argv[])
     pthread_create(&worker_threads[threads], NULL, threadAux, (void*)vip_t);
    //////////////////////////////
 
+
     listenfd = Open_listenfd(port);
     while(1){
         clientlen = sizeof(clientaddr);
@@ -202,11 +260,6 @@ int main(int argc, char *argv[])
 
         pthread_mutex_lock(&lock);
 
-        ///added this based on piazza 17/1
-        /*
-        while(waitingRequests_regular->size == 0){
-            pthread_cond_wait(&blockCond, &lock);
-        }*/
 
         ///if the bufferSize+1 request is vip what sould happen in drop tail?
 
@@ -220,6 +273,7 @@ int main(int argc, char *argv[])
             else if(strcmp(schedalg, "dt") == 0){
                 if(getRequestMetaData(connfd)){
                     Node request = pop(waitingRequests_regular);
+                    pthread_cond_signal(&blockCond); /// 21 mona
                     close(request->fd);
                 }
                 else{
@@ -230,6 +284,7 @@ int main(int argc, char *argv[])
             }
             else if(strcmp(schedalg, "dh") == 0){
                 Node request = pop(waitingRequests_regular);
+                pthread_cond_signal(&blockCond); /// 21 mona
                 if(!request)
                 {
                     close(connfd);
@@ -255,6 +310,7 @@ int main(int argc, char *argv[])
                 {
                     int index = rand()%(waitingRequests_regular->size);
                     removeByIndex(waitingRequests_regular, index);
+                    pthread_cond_signal(&blockCond); /// 21 mona
                 }
             }
         }
@@ -263,11 +319,14 @@ int main(int argc, char *argv[])
         Node newRequest = createNode(connfd, currtime);
         if(isRequestVIP){
             addNode(waitingRequests_vip, newRequest);
+            ///should add signal so that the vip thread know that there is a vip request in the waitingRequests_vip (vip_queue->size>0)
+            pthread_cond_signal(&waitCond_vip); /// 21 mona
         }
         else{
             addNode(waitingRequests_regular, newRequest);
+            pthread_cond_signal(&waitCond);
         }
-        pthread_cond_signal(&waitCond);
+
         pthread_mutex_unlock(&lock);
     }
     pthread_cond_destroy(&waitCond);
