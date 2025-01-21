@@ -2,6 +2,7 @@
 #define __REQUEST_H__
 
 #include "stdbool.h"
+#include "queue.h"
 typedef struct Threads_stats{
 	int id;
 	int stat_req;
@@ -11,7 +12,7 @@ typedef struct Threads_stats{
 } * threads_stats;
 
 // handle a request
-void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, threads_stats t_stats);
+void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, threads_stats t_stats, Queue queue);
 
 //  Returns True/False if realtime event
 int getRequestMetaData(int fd);

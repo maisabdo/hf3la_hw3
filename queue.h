@@ -35,6 +35,8 @@ void addNode(Queue q,Node node);
 //popping from queue
 Node pop(Queue q);
 
+Node deleteLast(Queue q);
+
 //removing node based on fd or index
 void removeByIndex(Queue q,int index);
 void removeByFd(Queue q,int fd);

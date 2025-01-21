@@ -83,6 +83,28 @@ Node pop(Queue q){
     return first;
 }
 
+Node deleteLast(Queue q) {
+    if(q == NULL || q->last == NULL){
+        return NULL;
+    }
+
+    Node lastNode = q->last;
+    if(q->first == q->last){
+        q->first = NULL;
+        q->last = NULL;
+    }
+    else{
+        q->last = lastNode->prev;
+        q->last->next = NULL;
+    }
+
+    lastNode->prev = NULL;
+    q->size--;
+
+    return lastNode;
+}
+
+
 void removeByIndex(Queue q,int index){
     if(q==NULL){
         return;

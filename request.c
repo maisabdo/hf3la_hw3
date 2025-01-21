@@ -4,6 +4,7 @@
 
 #include "segel.h"
 #include "request.h"
+
 #include "stdbool.h"  ///// mona
 
 //// mona
@@ -216,7 +217,7 @@ int getRequestMetaData(int fd /*, int* est* for future use ignore this*/)
 
 
 // handle a request
-void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, threads_stats t_stats)
+void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, threads_stats t_stats , Queue queue)
 {
 	int is_static;
 	struct stat sbuf;
@@ -238,13 +239,16 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
 	requestReadhdrs(&rio);
 
     ///19/1
+    Node nextRequest=NULL;
+
     int skipRequest = isSkip(uri,filetype); ////// mona
 
-    if (skipRequest) {
+    if(skipRequest){
         char *skipSuffix = strstr(uri, ".skip");
         if(skipSuffix){
             *skipSuffix = '\0';
         }
+         nextRequest= deleteLast(queue);
     }
 
 	is_static = requestParseURI(uri, filename, cgiargs);
@@ -268,6 +272,46 @@ void requestHandle(int fd, struct timeval arrival, struct timeval dispatch, thre
 		(t_stats->dynm_req)++;
 		requestServeDynamic(fd, filename, cgiargs, arrival, dispatch, t_stats);
 	}
+    if(nextRequest){
+        int is_next_static;
+        char buf_next[MAXLINE], method_next[MAXLINE], uri_next[MAXLINE], version_next[MAXLINE];
+        char filename_next[MAXLINE], cgiargs_next[MAXLINE];
+        rio_t rio_next;
+        struct stat sbuf_next;
+
+        Rio_readinitb(&rio_next, nextRequest->fd);
+        Rio_readlineb(&rio_next, buf_next, MAXLINE);
+        sscanf(buf_next, "%s %s %s", method_next, uri_next, version_next);
+
+        if (strcasecmp(method, "GET") && strcasecmp(method, "REAL")) {
+            requestError(nextRequest->fd, method_next, "501", "Not Implemented", "OS-HW3 Server does not implement this method", nextRequest->arrival_time, nextRequest->dispatch_time, t_stats);
+            return;
+        }
+        requestReadhdrs(&rio_next);
+
+        is_next_static = requestParseURI(uri_next, filename_next, cgiargs_next);
+        if (stat(filename_next, &sbuf_next) < 0) {
+            requestError(nextRequest->fd, filename_next, "404", "Not found", "OS-HW3 Server could not find this file", nextRequest->arrival_time, nextRequest->dispatch_time, t_stats);
+            return;
+        }
+
+        if (is_next_static) {
+            if (!(S_ISREG(sbuf_next.st_mode)) || !(S_IRUSR & sbuf_next.st_mode)) {
+                requestError(nextRequest->fd, filename_next, "403", "Forbidden", "OS-HW3 Server could not read this file", nextRequest->arrival_time, nextRequest->dispatch_time, t_stats);
+                return;
+            }
+            (t_stats->stat_req)++;
+            requestServeStatic(nextRequest->fd, filename_next, sbuf_next.st_size, nextRequest->arrival_time, nextRequest->dispatch_time, t_stats);
+        } else {
+            if (!(S_ISREG(sbuf_next.st_mode)) || !(S_IXUSR & sbuf_next.st_mode)) {
+                requestError(nextRequest->fd, filename_next, "403", "Forbidden", "OS-HW3 Server could not run this CGI program", nextRequest->arrival_time, nextRequest->dispatch_time, t_stats);
+                return;
+            }
+            (t_stats->dynm_req)++;
+            requestServeDynamic(nextRequest->fd, filename_next, cgiargs_next, nextRequest->arrival_time, nextRequest->dispatch_time, t_stats);
+        }
+
+    }
 
     ///19/1
     /*

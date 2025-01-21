@@ -101,7 +101,7 @@ void* threadAux(void* t) {
             struct timeval dispatch = request->dispatch_time;
 
             pthread_mutex_unlock(&lock);
-            requestHandle(fd, arrival, dispatch, thread);
+            requestHandle(fd, arrival, dispatch, thread,waitingRequests_regular);
 
             pthread_mutex_lock(&lock);
             removeByFd(workingRequests_regular, fd);
@@ -139,7 +139,7 @@ void* threadAux(void* t) {
             struct timeval dispatch = request->dispatch_time;
 
             pthread_mutex_unlock(&lock);
-            requestHandle(fd, arrival, dispatch, thread);
+            requestHandle(fd, arrival, dispatch, thread,waitingRequests_vip);
 
 
             close(fd);
