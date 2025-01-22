@@ -13,6 +13,9 @@ pthread_cond_t waitCond; //empty
 pthread_cond_t blockCond; //full
 pthread_cond_t waitCond_vip; //vip empty
 pthread_cond_t blockCond_vip; //vip working
+//// 22/1 mona
+int activeRequests = 0;
+pthread_cond_t allIdleCond;
 
 bool vip_working_curr;
 
@@ -94,6 +97,7 @@ void* threadAux(void* t) {
                 return NULL;
             }
 
+            activeRequests++; /// 22/1 mona
             timersub(&(request->pickup_time), &(request->arrival_time), &(request->dispatch_time));
             addNode(workingRequests_regular, request);
             int fd = request->fd;
@@ -103,7 +107,14 @@ void* threadAux(void* t) {
             pthread_mutex_unlock(&lock);
             requestHandle(fd, arrival, dispatch, thread,waitingRequests_regular);
 
-            pthread_mutex_lock(&lock);
+            pthread_mutex_lock(&lock); /// 22/1 mona
+            activeRequests--; /// 22/1 mona
+            if (waitingRequests_regular->size == 0 && waitingRequests_vip->size == 0 && activeRequests == 0) {
+                pthread_cond_signal(&allIdleCond);
+            }
+
+            // pthread_mutex_lock(&lock); /// 22/1 mona removed this
+            /////
             removeByFd(workingRequests_regular, fd);
             pthread_cond_signal(&blockCond);
             //pthread_cond_signal(&waitCond);   /////21/1
@@ -133,6 +144,7 @@ void* threadAux(void* t) {
                 return NULL;
             }
 
+            activeRequests++; /// 22/1 mona
             timersub(&(request->pickup_time), &(request->arrival_time), &(request->dispatch_time));
             int fd = request->fd;
             struct timeval arrival = request->arrival_time;
@@ -141,7 +153,13 @@ void* threadAux(void* t) {
             pthread_mutex_unlock(&lock);
             requestHandle(fd, arrival, dispatch, thread,waitingRequests_vip);
 
-
+            pthread_mutex_lock(&lock); /// 22/1 mona
+            activeRequests--; /// 22/1 mona
+            if (waitingRequests_regular->size == 0 && waitingRequests_vip->size == 0 && activeRequests == 0) {
+                pthread_cond_signal(&allIdleCond);
+            }
+            pthread_mutex_unlock(&lock);
+            /////////// 22/1 mona
             close(fd);
             free(request);
             pthread_cond_signal(&blockCond_vip);   ////21/1 mutix? lazm?
@@ -192,6 +210,12 @@ int main(int argc, char *argv[])
         pthread_cond_destroy(&blockCond_vip);
         return 0;
     }
+    ///// 22/1 mona
+    if (pthread_cond_init(&allIdleCond, NULL)) {
+        fprintf(stderr, "Failed to initialize allIdleCond\n");
+        return 1;
+    }
+    ///////
 
     waitingRequests_regular = createQueue();
     waitingRequests_vip=createQueue();
@@ -313,6 +337,27 @@ int main(int argc, char *argv[])
                     pthread_cond_signal(&blockCond); /// 21 mona
                 }
             }
+            /////// 22/1 mona newwwww
+            else if(strcmp(schedalg, "bf") == 0){
+                if (getRequestMetaData(connfd)) {
+                    while (waitingRequests_regular->size > 0 || waitingRequests_vip->size > 0 || activeRequests > 0) {
+                        pthread_cond_wait(&allIdleCond, &lock);
+                    }
+                }
+                else {
+                    while (waitingRequests_regular->size > 0 || waitingRequests_vip->size > 0 || activeRequests > 0) {
+                        pthread_cond_wait(&allIdleCond, &lock);
+                    }
+
+                    close(connfd);
+
+                }
+                pthread_mutex_unlock(&lock);
+                continue;
+            }
+            ////////
+
+
         }
 
         int isRequestVIP = getRequestMetaData(connfd);
